@@ -53,3 +53,13 @@ Some ideas:
 Or anything else you like.
 
 Enjoy!
+
+---
+
+## Summary of Improvements
+
+**Task 1:** Added full document versioning support. Users can now create new versions, switch between existing versions, and save changes to any version without creating a new one. Updated the database models and added the necessary API endpoints.
+
+**Task 2:** Finished the AI suggestions feature. The WebSocket endpoint now strips HTML from the editor, validates the content, and handles the unreliable AI responses. Added a suggestions panel to the UI where users can view, dismiss individual suggestions, or clear all suggestions at once. AI suggestions are triggered automatically a couple seconds after the user stops typing.
+
+**Task 3:** Built an audit trail and undo/redo system. Every time a user saves or creates a new version, an audit event is logged with who made the change, when, and how many words were added or removed. Users can view the last 10 events in an audit log modal. For undo/redo, I went with a snapshot approach rather than full event sourcing - each save creates a content snapshot that users can step through with undo/redo buttons or keyboard shortcuts (Cmd+Z / Cmd+Shift+Z).
