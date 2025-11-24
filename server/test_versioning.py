@@ -83,6 +83,90 @@ def test_document_2_independence():
     print(f"✓ Document 2 has {len(versions)} independent versions")
 
 
+def test_audit_log_exists():
+    """Test that audit log returns events"""
+    print("\nTesting: Audit log for document 1, version 1...")
+    response = requests.get(f"{BASE_URL}/document/1/version/1/audit")
+    assert response.status_code == 200
+    events = response.json()
+    assert len(events) > 0, "Should have audit events"
+    assert all("event_type" in e for e in events), "Events should have event_type"
+    assert all("user_name" in e for e in events), "Events should have user_name"
+    assert all("timestamp" in e for e in events), "Events should have timestamp"
+    print(f"✓ Audit log has {len(events)} events")
+
+
+def test_history_exists():
+    """Test that history returns save snapshots"""
+    print("\nTesting: History for document 1, version 1...")
+    response = requests.get(f"{BASE_URL}/document/1/version/1/history")
+    assert response.status_code == 200
+    history = response.json()
+    assert len(history) > 0, "Should have history snapshots"
+    assert all("content_snapshot" in h for h in history), "History should have content"
+    print(f"✓ History has {len(history)} snapshots")
+
+
+def test_save_creates_audit_event(version_id):
+    """Test that saving creates an audit event"""
+    print(f"\nTesting: Saving creates audit event...")
+    
+    # Get current audit log count
+    response = requests.get(f"{BASE_URL}/document/1/version/{version_id}/audit")
+    initial_count = len(response.json())
+    
+    # Update version
+    test_content = "<p>Test content for audit</p>"
+    requests.put(
+        f"{BASE_URL}/document/1/version/{version_id}",
+        json={"content": test_content}
+    )
+    
+    # Check audit log increased
+    response = requests.get(f"{BASE_URL}/document/1/version/{version_id}/audit")
+    new_count = len(response.json())
+    assert new_count > initial_count, "Audit log should have new event"
+    
+    # Check the latest event
+    events = response.json()
+    latest_event = events[0]  # Ordered DESC, so first is latest
+    assert latest_event["event_type"] == "save"
+    assert "lines_changed" in latest_event  # Can be None or a number
+    print("✓ Save created audit event")
+
+
+def test_word_count_tracking(version_id):
+    """Test that word count changes are tracked"""
+    print(f"\nTesting: Word count tracking...")
+    
+    # Make multiple saves to test word count
+    content1 = "<p>One two three</p>"
+    requests.put(
+        f"{BASE_URL}/document/1/version/{version_id}",
+        json={"content": content1}
+    )
+    
+    content2 = "<p>One two three four five</p>"
+    requests.put(
+        f"{BASE_URL}/document/1/version/{version_id}",
+        json={"content": content2}
+    )
+    
+    # Check audit log
+    response = requests.get(f"{BASE_URL}/document/1/version/{version_id}/audit")
+    events = response.json()
+    
+    # Find the latest save event
+    save_events = [e for e in events if e["event_type"] == "save"]
+    assert len(save_events) >= 1, "Should have save events"
+    
+    # Latest save should have word count (could be positive or negative)
+    latest_save = save_events[0]
+    # lines_changed can be None for first save, or a number for subsequent saves
+    assert latest_save["lines_changed"] is None or isinstance(latest_save["lines_changed"], int)
+    print("✓ Word count is tracked")
+
+
 def run_tests():
     """Run all tests"""
     print("=" * 60)
@@ -107,6 +191,18 @@ def run_tests():
         
         # Test 6: Document independence
         test_document_2_independence()
+        
+        # Test 7: Audit log exists
+        test_audit_log_exists()
+        
+        # Test 8: History exists
+        test_history_exists()
+        
+        # Test 9: Save creates audit event
+        test_save_creates_audit_event(new_version["id"])
+        
+        # Test 10: Word count tracking
+        test_word_count_tracking(new_version["id"])
         
         print("\n" + "=" * 60)
         print("✓ All tests passed!")

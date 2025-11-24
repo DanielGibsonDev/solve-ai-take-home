@@ -4,7 +4,11 @@ import {
     fetchVersion,
     createVersion,
     updateVersion,
+    fetchAuditLog,
+    fetchHistory,
     type DocumentVersion,
+    type AuditEvent,
+    type ContentSnapshot,
 } from '../api/documents';
 
 // Mock fetch globally
@@ -25,6 +29,7 @@ describe('Document API Functions', () => {
                     version_number: 1,
                     content: '<p>Version 1 content</p>',
                     created_at: '2024-01-01T00:00:00Z',
+                    created_by: 'Daniel',
                 },
                 {
                     id: 2,
@@ -32,6 +37,7 @@ describe('Document API Functions', () => {
                     version_number: 2,
                     content: '<p>Version 2 content</p>',
                     created_at: '2024-01-02T00:00:00Z',
+                    created_by: 'Daniel',
                 },
             ];
 
@@ -69,6 +75,7 @@ describe('Document API Functions', () => {
                 version_number: 2,
                 content: '<p>Specific version content</p>',
                 created_at: '2024-01-02T00:00:00Z',
+                created_by: 'Daniel',
             };
 
             mockFetch.mockResolvedValueOnce({
@@ -105,6 +112,7 @@ describe('Document API Functions', () => {
                 version_number: 3,
                 content: '<p>New version content</p>',
                 created_at: '2024-01-03T00:00:00Z',
+                created_by: 'Daniel',
             };
 
             mockFetch.mockResolvedValueOnce({
@@ -148,6 +156,7 @@ describe('Document API Functions', () => {
                 version_number: 2,
                 content: updatedContent,
                 created_at: '2024-01-02T00:00:00Z',
+                created_by: 'Daniel',
             };
 
             mockFetch.mockResolvedValueOnce({
@@ -182,6 +191,96 @@ describe('Document API Functions', () => {
         });
     });
 
+    describe('fetchAuditLog', () => {
+        it('should fetch audit log events', async () => {
+            const mockEvents: AuditEvent[] = [
+                {
+                    id: 1,
+                    event_type: 'save',
+                    user_name: 'Daniel',
+                    document_id: 1,
+                    version_id: 1,
+                    timestamp: '2024-01-01T10:00:00Z',
+                    lines_changed: 5,
+                },
+                {
+                    id: 2,
+                    event_type: 'create_version',
+                    user_name: 'Daniel',
+                    document_id: 1,
+                    version_id: 1,
+                    timestamp: '2024-01-01T09:00:00Z',
+                    lines_changed: null,
+                },
+            ];
+
+            mockFetch.mockResolvedValueOnce({
+                ok: true,
+                json: async () => mockEvents,
+            });
+
+            const result = await fetchAuditLog(1, 1);
+
+            expect(mockFetch).toHaveBeenCalledWith(
+                'http://localhost:8000/document/1/version/1/audit'
+            );
+            expect(result).toEqual(mockEvents);
+            expect(result).toHaveLength(2);
+        });
+
+        it('should throw error when fetch fails', async () => {
+            mockFetch.mockResolvedValueOnce({
+                ok: false,
+                statusText: 'Internal Server Error',
+            });
+
+            await expect(fetchAuditLog(1, 1)).rejects.toThrow(
+                'Failed to fetch audit log: Internal Server Error'
+            );
+        });
+    });
+
+    describe('fetchHistory', () => {
+        it('should fetch history snapshots for undo/redo', async () => {
+            const mockSnapshots: ContentSnapshot[] = [
+                {
+                    id: 1,
+                    timestamp: '2024-01-01T09:00:00Z',
+                    content_snapshot: '<p>First save</p>',
+                },
+                {
+                    id: 2,
+                    timestamp: '2024-01-01T10:00:00Z',
+                    content_snapshot: '<p>Second save</p>',
+                },
+            ];
+
+            mockFetch.mockResolvedValueOnce({
+                ok: true,
+                json: async () => mockSnapshots,
+            });
+
+            const result = await fetchHistory(1, 1);
+
+            expect(mockFetch).toHaveBeenCalledWith(
+                'http://localhost:8000/document/1/version/1/history'
+            );
+            expect(result).toEqual(mockSnapshots);
+            expect(result).toHaveLength(2);
+        });
+
+        it('should throw error when fetch fails', async () => {
+            mockFetch.mockResolvedValueOnce({
+                ok: false,
+                statusText: 'Not Found',
+            });
+
+            await expect(fetchHistory(1, 1)).rejects.toThrow(
+                'Failed to fetch history: Not Found'
+            );
+        });
+    });
+
     describe('API Integration', () => {
         it('should handle network errors gracefully', async () => {
             mockFetch.mockRejectedValueOnce(new Error('Network error'));
@@ -196,6 +295,7 @@ describe('Document API Functions', () => {
                 version_number: 1,
                 content: '<p>Test</p>',
                 created_at: '2024-01-01T00:00:00Z',
+                created_by: 'Daniel',
             };
 
             mockFetch.mockResolvedValue({
