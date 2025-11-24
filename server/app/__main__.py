@@ -417,31 +417,21 @@ def update_version(
     
     # Calculate word count change (more meaningful for document editing)
     new_content = version_data.content
+    old_content = version.content
     
-    # Get the last save event's content to compare against (instead of version.content)
-    # This ensures we're comparing like-with-like (editor HTML vs editor HTML)
-    last_save_event = db.scalar(
-        select(models.AuditEvent)
-        .where(
-            models.AuditEvent.document_id == document_id,
-            models.AuditEvent.version_id == version_id,
-            models.AuditEvent.event_type == EventType.SAVE
-        )
-        .order_by(models.AuditEvent.timestamp.desc())
-    )
+    # Compare against current version content (what user sees when loading)
+    # This is accurate even after undo operations since it reflects the actual baseline
+    old_text = strip_html(old_content)
+    new_text = strip_html(new_content)
     
-    # Calculate word delta only if there's a previous save to compare against
-    if last_save_event:
-        old_content = last_save_event.content_snapshot
-        old_text = strip_html(old_content)
-        new_text = strip_html(new_content)
-        
-        old_word_count = len(old_text.split())
-        new_word_count = len(new_text.split())
-        
-        lines_changed = new_word_count - old_word_count
-    else:
-        # First save - no baseline to compare, set to None
+    old_word_count = len(old_text.split())
+    new_word_count = len(new_text.split())
+    
+    # Calculate word delta
+    lines_changed = new_word_count - old_word_count
+    
+    # Set to None if no actual change (avoids showing "0 words" in audit log)
+    if lines_changed == 0:
         lines_changed = None
     
     # Update version content

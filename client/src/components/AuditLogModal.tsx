@@ -28,7 +28,7 @@ const AuditLogModal = ({ isOpen, onClose, events, isLoading }: AuditLogModalProp
             let wordChange: string;
 
             if (wordDelta === null || wordDelta === undefined) {
-                wordChange = 'initial save';
+                wordChange = 'no change';
             } else if (wordDelta > 0) {
                 const plural = wordDelta === 1 ? 'word' : 'words';
                 wordChange = `+${wordDelta} ${plural}`;
@@ -36,6 +36,8 @@ const AuditLogModal = ({ isOpen, onClose, events, isLoading }: AuditLogModalProp
                 const plural = wordDelta === -1 ? 'word' : 'words';
                 wordChange = `${wordDelta} ${plural}`;
             } else {
+                // This else case is redundant now (handled by null check above)
+                // but kept for clarity
                 wordChange = 'no change';
             }
 
