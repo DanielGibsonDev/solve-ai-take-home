@@ -1,12 +1,32 @@
 const BACKEND_URL = "http://localhost:8000";
 
+export type EventType = "save" | "create_version";
+
 export interface DocumentVersion {
     id: number;
     document_id: number;
     version_number: number;
     content: string;
     created_at: string;
+    created_by: string;
 }
+
+export interface AuditEvent {
+    id: number;
+    event_type: EventType;
+    user_name: string;
+    document_id: number;
+    version_id: number;
+    timestamp: string;
+    lines_changed: number | null;
+}
+
+export interface ContentSnapshot {
+    id: number;
+    timestamp: string;
+    content_snapshot: string;
+}
+
 
 /**
  * Fetch all versions for a specific document
@@ -78,6 +98,42 @@ export const updateVersion = async (
 
     if (!response.ok) {
         throw new Error(`Failed to update version: ${response.statusText}`);
+    }
+
+    return response.json();
+};
+
+/**
+ * Fetch audit log for a specific version (last 10 events)
+ */
+export const fetchAuditLog = async (
+    documentId: number,
+    versionId: number
+): Promise<AuditEvent[]> => {
+    const response = await fetch(
+        `${BACKEND_URL}/document/${documentId}/version/${versionId}/audit`
+    );
+
+    if (!response.ok) {
+        throw new Error(`Failed to fetch audit log: ${response.statusText}`);
+    }
+
+    return response.json();
+};
+
+/**
+ * Fetch history (all save snapshots) for a version for undo/redo
+ */
+export const fetchHistory = async (
+    documentId: number,
+    versionId: number
+): Promise<ContentSnapshot[]> => {
+    const response = await fetch(
+        `${BACKEND_URL}/document/${documentId}/version/${versionId}/history`
+    );
+
+    if (!response.ok) {
+        throw new Error(`Failed to fetch history: ${response.statusText}`);
     }
 
     return response.json();

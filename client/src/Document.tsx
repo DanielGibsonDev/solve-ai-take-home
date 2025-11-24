@@ -50,7 +50,7 @@ export default function Document({ onContentChange, content, onSuggestionsUpdate
     debounce((content: string) => {
       // Only send if content has substance
       if (content && content.trim().length > 10) {
-        sendMessage(content);
+      sendMessage(content);
       }
     }, 2000), // 2 second debounce - give user time to type
     [sendMessage]

@@ -1,5 +1,6 @@
 from pydantic import BaseModel, ConfigDict
 from datetime import datetime
+from app.models import EventType
 
 
 class DocumentBase(BaseModel):
@@ -23,7 +24,28 @@ class DocumentVersionRead(DocumentVersionBase):
     document_id: int
     version_number: int
     created_at: datetime
+    created_by: str
 
 
 class DocumentVersionCreate(BaseModel):
     pass  # No fields needed - will copy from current active version
+
+
+class AuditEventRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    event_type: EventType
+    user_name: str
+    document_id: int
+    version_id: int
+    timestamp: datetime
+    lines_changed: int | None
+
+
+class ContentSnapshotRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    timestamp: datetime
+    content_snapshot: str

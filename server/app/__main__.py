@@ -14,6 +14,7 @@ from app.internal.db import Base, SessionLocal, engine, get_db
 
 import app.models as models
 import app.schemas as schemas
+from app.models import EventType
 
 
 class HTMLTextExtractor(HTMLParser):
@@ -100,17 +101,62 @@ async def lifespan(_: FastAPI):
         db.execute(insert(models.Document).values(id=2, content=DOCUMENT_2))
         
         # Create initial version 1 for each document
-        db.execute(insert(models.DocumentVersion).values(
-            document_id=1, 
-            version_number=1, 
-            content=DOCUMENT_1
-        ))
-        db.execute(insert(models.DocumentVersion).values(
-            document_id=2, 
-            version_number=1, 
-            content=DOCUMENT_2
-        ))
+        version1 = models.DocumentVersion(
+            document_id=1,
+            version_number=1,
+            content=DOCUMENT_1,
+            created_by="Daniel"
+        )
+        version2 = models.DocumentVersion(
+            document_id=2,
+            version_number=1,
+            content=DOCUMENT_2,
+            created_by="Daniel"
+        )
+        db.add(version1)
+        db.add(version2)
+        db.commit()
+        db.refresh(version1)
+        db.refresh(version2)
         
+        # Create initial audit events for version creation
+        audit1_create = models.AuditEvent(
+            event_type=EventType.CREATE_VERSION,
+            user_name="Daniel",
+            document_id=1,
+            version_id=version1.id,
+            content_snapshot=DOCUMENT_1
+        )
+        audit2_create = models.AuditEvent(
+            event_type=EventType.CREATE_VERSION,
+            user_name="Daniel",
+            document_id=2,
+            version_id=version2.id,
+            content_snapshot=DOCUMENT_2
+        )
+        
+        # Create initial SAVE events for undo/redo history
+        audit1_save = models.AuditEvent(
+            event_type=EventType.SAVE,
+            user_name="Daniel",
+            document_id=1,
+            version_id=version1.id,
+            lines_changed=None,  # Initial save, no comparison
+            content_snapshot=DOCUMENT_1
+        )
+        audit2_save = models.AuditEvent(
+            event_type=EventType.SAVE,
+            user_name="Daniel",
+            document_id=2,
+            version_id=version2.id,
+            lines_changed=None,  # Initial save, no comparison
+            content_snapshot=DOCUMENT_2
+        )
+        
+        db.add(audit1_create)
+        db.add(audit2_create)
+        db.add(audit1_save)
+        db.add(audit2_save)
         db.commit()
     yield
 
@@ -330,11 +376,23 @@ def create_version(
     new_version = models.DocumentVersion(
         document_id=document_id,
         version_number=new_version_number,
-        content=latest_version.content
+        content=latest_version.content,
+        created_by="Daniel"
     )
     db.add(new_version)
     db.commit()
     db.refresh(new_version)
+    
+    # Log audit event for version creation
+    audit_event = models.AuditEvent(
+        event_type=EventType.CREATE_VERSION,
+        user_name="Daniel",
+        document_id=document_id,
+        version_id=new_version.id,
+        content_snapshot=new_version.content
+    )
+    db.add(audit_event)
+    db.commit()
     
     return new_version
 
@@ -357,8 +415,84 @@ def update_version(
     if not version:
         raise HTTPException(status_code=404, detail="Version not found")
     
-    version.content = version_data.content
+    # Calculate word count change (more meaningful for document editing)
+    new_content = version_data.content
+    
+    # Get the last save event's content to compare against (instead of version.content)
+    # This ensures we're comparing like-with-like (editor HTML vs editor HTML)
+    last_save_event = db.scalar(
+        select(models.AuditEvent)
+        .where(
+            models.AuditEvent.document_id == document_id,
+            models.AuditEvent.version_id == version_id,
+            models.AuditEvent.event_type == EventType.SAVE
+        )
+        .order_by(models.AuditEvent.timestamp.desc())
+    )
+    
+    # Calculate word delta only if there's a previous save to compare against
+    if last_save_event:
+        old_content = last_save_event.content_snapshot
+        old_text = strip_html(old_content)
+        new_text = strip_html(new_content)
+        
+        old_word_count = len(old_text.split())
+        new_word_count = len(new_text.split())
+        
+        lines_changed = new_word_count - old_word_count
+    else:
+        # First save - no baseline to compare, set to None
+        lines_changed = None
+    
+    # Update version content
+    version.content = new_content
     db.commit()
     db.refresh(version)
     
+    # Log audit event for save
+    audit_event = models.AuditEvent(
+        event_type=EventType.SAVE,
+        user_name="Daniel",
+        document_id=document_id,
+        version_id=version_id,
+        lines_changed=lines_changed,
+        content_snapshot=new_content
+    )
+    db.add(audit_event)
+    db.commit()
+    
     return version
+
+
+@app.get("/document/{document_id}/version/{version_id}/audit")
+def get_audit_log(
+    document_id: int, version_id: int, db: Session = Depends(get_db)
+) -> list[schemas.AuditEventRead]:
+    """Get the last 10 audit events for a specific version"""
+    events = db.scalars(
+        select(models.AuditEvent)
+        .where(
+            models.AuditEvent.document_id == document_id,
+            models.AuditEvent.version_id == version_id
+        )
+        .order_by(models.AuditEvent.timestamp.desc())
+        .limit(10)
+    ).all()
+    return events
+
+
+@app.get("/document/{document_id}/version/{version_id}/history")
+def get_history(
+    document_id: int, version_id: int, db: Session = Depends(get_db)
+) -> list[schemas.ContentSnapshotRead]:
+    """Get all save snapshots for a version (for undo/redo)"""
+    events = db.scalars(
+        select(models.AuditEvent)
+        .where(
+            models.AuditEvent.document_id == document_id,
+            models.AuditEvent.version_id == version_id,
+            models.AuditEvent.event_type == EventType.SAVE
+        )
+        .order_by(models.AuditEvent.timestamp)
+    ).all()
+    return events
